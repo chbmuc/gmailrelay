@@ -48,6 +48,11 @@ var (
 	strictSender     = flagset.Bool("strict_sender", false, "Use only SMTP servers with Sender matches to From")
 	remoteCert       = flagset.String("remote_certificate", "", "Client SSL certificate for remote STARTTLS/TLS")
 	remoteKey        = flagset.String("remote_key", "", "Client SSL private key for remote STARTTLS/TLS")
+	webListen        = flagset.String("web_listen", "", "Address to listen for web UI (empty = disabled)")
+	webUsername      = flagset.String("web_username", "", "Username for web UI Basic Auth")
+	webPassword      = flagset.String("web_password", "", "Password for web UI Basic Auth")
+	oauth2ClientID     = flagset.String("oauth2_client_id", "", "Google OAuth2 client ID")
+	oauth2ClientSecret = flagset.String("oauth2_client_secret", "", "Google OAuth2 client secret")
 
 	// additional flags
 	_           = flagset.String("config", "", "Path to config file (ini format)")

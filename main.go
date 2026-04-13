@@ -450,6 +450,10 @@ func main() {
 		}()
 	}
 
+	if *webListen != "" {
+		go startWebServer()
+	}
+
 	handleSignals()
 
 	// First close the listeners

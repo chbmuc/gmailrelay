@@ -32,3 +32,65 @@ device which produces mail.
 * Small codebase
 * IPv6 support
 * Aliases support (dynamic reload when alias file changes)
+* Web UI for live configuration editing
+* Gmail OAuth2 / XOAUTH2 support with browser-based authorization and automatic token refresh
+
+
+## Web UI
+
+smtprelay includes an optional embedded web server for viewing and editing configuration through a browser. Enable it with three config options:
+
+```ini
+web_listen   = 127.0.0.1:8080
+web_username = admin
+web_password = secret
+```
+
+Or via flags: `--web_listen 127.0.0.1:8080 --web_username admin --web_password secret`
+
+Opening `http://127.0.0.1:8080` in a browser prompts for the credentials and then shows a form with all relay settings. Saving the form writes a new config file and restarts the process automatically.
+
+**Note:** The `--config` flag must point to a writable INI file for saving to work. If smtprelay was started without `--config`, the web UI is read-only.
+
+
+## Gmail OAuth2
+
+Google requires OAuth2 (XOAUTH2) for SMTP access instead of plain passwords. smtprelay supports this natively.
+
+### 1. Create Google OAuth2 credentials
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a project.
+2. Enable the **Gmail API**.
+3. Under **APIs & Services → Credentials**, create an **OAuth 2.0 Client ID** of type *Desktop app*.
+4. Note the **Client ID** and **Client Secret**.
+5. Add `http://127.0.0.1:8080/oauth2/callback` (replace port with your `web_listen`) to the list of **Authorized redirect URIs**.
+
+### 2. Configure smtprelay
+
+Add the credentials to your config file:
+
+```ini
+oauth2_client_id     = 123456789-abc.apps.googleusercontent.com
+oauth2_client_secret = GOCSPX-...
+```
+
+The web UI must also be enabled (see above) because the authorization flow runs through it.
+
+### 3. Authorize a Gmail account
+
+1. Open `http://<web_listen>/oauth2` in your browser.
+2. Enter the Gmail address and a path where the token file should be saved (e.g. `/etc/smtprelay/gmail.json`).
+3. Click **Authorize with Google** and complete the Google consent screen.
+4. smtprelay writes the token file (access token + refresh token) automatically.
+
+### 4. Configure the remote
+
+Reference the token file in the `remotes` setting:
+
+```ini
+remotes = smtps://smtp.gmail.com:465?auth=xoauth2&email=you@gmail.com&token_file=/etc/smtprelay/gmail.json
+```
+
+### Token refresh
+
+smtprelay checks the token expiry before every outgoing connection. If the access token has expired it uses the stored refresh token to obtain a new one and updates the token file on disk — no manual intervention required.
