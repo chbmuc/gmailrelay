@@ -180,19 +180,7 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		Str("uuid", generateUUID()).
 		Logger()
 
-	var envRemotes []*Remote
-
-	if *strictSender {
-		for _, remote := range remotes {
-			if remote.Sender == env.Sender {
-				envRemotes = append(envRemotes, remote)
-			}
-		}
-	} else {
-		envRemotes = remotes
-	}
-
-	if len(envRemotes) == 0 && *command == "" {
+	if len(remotes) == 0 && *command == "" {
 		logger.Warn().Msg("no remote_host or command set; discarding mail")
 		return smtpd.Error{Code: 554, Message: "There are no appropriate remote_host or command"}
 	}
@@ -228,7 +216,7 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		cmdLogger.Info().Msg("pipe command successful: " + stdout.String())
 	}
 
-	for _, remote := range envRemotes {
+	for _, remote := range remotes {
 		logger = logger.With().Str("host", remote.Addr).Logger()
 		logger.Info().Msg("delivering mail from peer using smarthost")
 

@@ -44,15 +44,14 @@ var (
 	allowedUsers     = flagset.String("allowed_users", "", "Path to file with valid users/passwords")
 	aliasFile        = flagset.String("aliases_file", "", "Path to aliases file")
 	command          = flagset.String("command", "", "Path to pipe command")
-	remotesStr       = flagset.String("remotes", "", "Outgoing SMTP servers")
-	strictSender     = flagset.Bool("strict_sender", false, "Use only SMTP servers with Sender matches to From")
-	remoteCert       = flagset.String("remote_certificate", "", "Client SSL certificate for remote STARTTLS/TLS")
-	remoteKey        = flagset.String("remote_key", "", "Client SSL private key for remote STARTTLS/TLS")
 	webListen        = flagset.String("web_listen", "", "Address to listen for web UI (empty = disabled)")
 	webUsername      = flagset.String("web_username", "", "Username for web UI Basic Auth")
 	webPassword      = flagset.String("web_password", "", "Password for web UI Basic Auth")
 	oauth2ClientID     = flagset.String("oauth2_client_id", "", "Google OAuth2 client ID")
 	oauth2ClientSecret = flagset.String("oauth2_client_secret", "", "Google OAuth2 client secret")
+	oauth2RedirectURL  = flagset.String("oauth2_redirect_url", "", "OAuth2 redirect URL (e.g. http://myhost:8080/oauth2/callback)")
+	oauth2Email        = flagset.String("oauth2_email", "", "Gmail address for OAuth2 XOAUTH2 authentication")
+	oauth2TokenFile    = flagset.String("oauth2_token_file", "", "Path to OAuth2 token file (JSON)")
 
 	// additional flags
 	_           = flagset.String("config", "", "Path to config file (ini format)")
@@ -72,36 +71,6 @@ var (
 
 func localAuthRequired() bool {
 	return *allowedUsers != ""
-}
-
-func remoteCertAndKeyReadable() bool {
-	certSet := *remoteCert != ""
-	keySet := *remoteKey != ""
-	
-	// Both must be set or both must be unset
-	if certSet != keySet {
-		return false
-	}
-	
-	// If both are set, verify files exist and are accessible
-	if certSet && keySet {
-		if _, err := os.Stat(*remoteCert); err != nil {
-			log.Error().
-				Str("cert", *remoteCert).
-				Err(err).
-				Msg("cannot access remote client certificate file")
-			return false
-		}
-		if _, err := os.Stat(*remoteKey); err != nil {
-			log.Error().
-				Str("key", *remoteKey).
-				Err(err).
-				Msg("cannot access remote client key file")
-			return false
-		}
-	}
-	
-	return true
 }
 
 func setupAliases() {
@@ -165,22 +134,20 @@ func setupAllowedPatterns() {
 }
 
 func setupRemotes() {
-	logger := log.With().Str("remotes", *remotesStr).Logger()
-
-	if *remotesStr != "" {
-		for _, remoteURL := range strings.Split(*remotesStr, " ") {
-			r, err := ParseRemote(remoteURL)
-			if err != nil {
-				logger.Fatal().Msg(fmt.Sprintf("error parsing url: '%s': %v", remoteURL, err))
-			}
-
-			if *remoteCert != "" && *remoteKey != "" && (r.Scheme == "smtps" || r.Scheme == "starttls") {
-				r.ClientCertPath = *remoteCert
-				r.ClientKeyPath = *remoteKey
-			}
-
-			remotes = append(remotes, r)
+	// Auto-construct Gmail OAuth2 remote when credentials are configured
+	if *oauth2Email != "" && *oauth2TokenFile != "" && *oauth2ClientID != "" && *oauth2ClientSecret != "" {
+		r := &Remote{
+			Scheme:          "smtps",
+			Hostname:        "smtp.gmail.com",
+			Port:            "465",
+			Addr:            "smtp.gmail.com:465",
+			Auth:            XOAuth2Auth(*oauth2Email, *oauth2TokenFile),
 		}
+		remotes = append(remotes, r)
+		log.Info().
+			Str("email", *oauth2Email).
+			Str("token_file", *oauth2TokenFile).
+			Msg("Gmail OAuth2 remote configured automatically")
 	}
 }
 
@@ -289,17 +256,6 @@ func ConfigLoad() {
 	if *versionInfo {
 		fmt.Printf("smtprelay/%s (%s)\n", appVersion, buildTime)
 		os.Exit(0)
-	}
-
-	if *remotesStr == "" && *command == "" {
-		log.Warn().Msg("no remotes or command set; mail will not be forwarded!")
-	}
-
-	if !remoteCertAndKeyReadable() {
-		log.Fatal().
-			Str("remote_certificate", *remoteCert).
-			Str("remote_key", *remoteKey).
-			Msg("remote_certificate and remote_key must both be set or both be empty")
 	}
 
 	setupAllowedNetworks()

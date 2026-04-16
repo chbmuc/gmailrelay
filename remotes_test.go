@@ -15,7 +15,7 @@ func AssertRemoteUrlEquals(t *testing.T, expected *Remote, remotUrl string) {
 	assert.Equal(t, expected.Addr, actual.Addr, "Addr %s", remotUrl)
 	assert.Equal(t, expected.Hostname, actual.Hostname, "Hostname %s", remotUrl)
 	assert.Equal(t, expected.Port, actual.Port, "Port %s", remotUrl)
-	assert.Equal(t, expected.Sender, actual.Sender, "Sender %s", remotUrl)
+
 	assert.Equal(t, expected.SkipVerify, actual.SkipVerify, "SkipVerify %s", remotUrl)
 
 	if expected.Auth != nil || actual.Auth != nil {
@@ -33,7 +33,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "25",
 		Addr:       "email.com:25",
-		Sender:     "",
+
 	}, "smtp://email.com")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -43,7 +43,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "25",
 		Addr:       "email.com:25",
-		Sender:     "",
+
 	}, "smtp://email.com?skipVerify")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -53,7 +53,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "25",
 		Addr:       "email.com:25",
-		Sender:     "",
+
 	}, "smtp://user:pass@email.com")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -63,7 +63,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "25",
 		Addr:       "email.com:25",
-		Sender:     "",
+
 	}, "smtp://user:pass@email.com?auth=login")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -73,7 +73,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "25",
 		Addr:       "email.com:25",
-		Sender:     "sender@website.com",
+
 	}, "smtp://user:pass@email.com/sender@website.com?auth=login")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -83,7 +83,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "465",
 		Addr:       "email.com:465",
-		Sender:     "sender@website.com",
+
 	}, "smtps://user:pass@email.com/sender@website.com?auth=login")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -93,7 +93,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "8425",
 		Addr:       "email.com:8425",
-		Sender:     "sender@website.com",
+
 	}, "smtps://user:pass@email.com:8425/sender@website.com?auth=login&skipVerify")
 
 	AssertRemoteUrlEquals(t, &Remote{
@@ -103,7 +103,7 @@ func TestValidRemoteUrls(t *testing.T) {
 		Hostname:   "email.com",
 		Port:       "8425",
 		Addr:       "email.com:8425",
-		Sender:     "sender@website.com",
+
 	}, "starttls://user:pass@email.com:8425/sender@website.com?auth=login&skipVerify")
 }
 

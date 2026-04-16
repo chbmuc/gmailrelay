@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,7 +29,6 @@ func basicAuth(next http.HandlerFunc) http.HandlerFunc {
 func startWebServer() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", basicAuth(handleWebUI))
-	mux.HandleFunc("/oauth2", basicAuth(handleOAuth2Page))
 	mux.HandleFunc("/oauth2/authorize", basicAuth(handleOAuth2Authorize))
 	mux.HandleFunc("/oauth2/callback", basicAuth(handleOAuth2Callback))
 
@@ -46,7 +46,7 @@ func startWebServer() {
 func handleWebUI(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		renderForm(w, "")
+		renderForm(w, r.URL.Query().Get("error"), r.URL.Query().Get("notice"))
 	case http.MethodPost:
 		saveConfig(w, r)
 	default:
@@ -57,12 +57,12 @@ func handleWebUI(w http.ResponseWriter, r *http.Request) {
 func saveConfig(w http.ResponseWriter, r *http.Request) {
 	configPath := flagset.Lookup("config").Value.String()
 	if configPath == "" {
-		renderForm(w, "Cannot save: no --config file path specified. Restart smtprelay with --config <path> to enable saving.")
+		renderForm(w, "Cannot save: no --config file path specified. Restart smtprelay with --config <path> to enable saving.", "")
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		renderForm(w, fmt.Sprintf("Error parsing form: %v", err))
+		renderForm(w, fmt.Sprintf("Error parsing form: %v", err), "")
 		return
 	}
 
@@ -87,12 +87,6 @@ func saveConfig(w http.ResponseWriter, r *http.Request) {
 		"local_cert = " + fv("local_cert"),
 		"local_key = " + fv("local_key"),
 		"local_forcetls = " + fb("local_forcetls"),
-		"",
-		"# Remotes",
-		"remotes = " + fv("remotes"),
-		"strict_sender = " + fb("strict_sender"),
-		"remote_certificate = " + fv("remote_certificate"),
-		"remote_key = " + fv("remote_key"),
 		"",
 		"# Access Control",
 		"allowed_nets = " + fv("allowed_nets"),
@@ -127,16 +121,23 @@ func saveConfig(w http.ResponseWriter, r *http.Request) {
 		"# OAuth2",
 		"oauth2_client_id = " + fv("oauth2_client_id"),
 		"oauth2_client_secret = " + fv("oauth2_client_secret"),
+		"oauth2_redirect_url = " + fv("oauth2_redirect_url"),
+		"oauth2_email = " + fv("oauth2_email"),
+		"oauth2_token_file = " + fv("oauth2_token_file"),
 	}
 
 	content := strings.Join(lines, "\n") + "\n"
 	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-		renderForm(w, fmt.Sprintf("Error writing config file: %v", err))
+		renderForm(w, fmt.Sprintf("Error writing config file: %v", err), "")
 		return
 	}
 
 	log.Info().Str("path", configPath).Msg("config saved via web UI, restarting")
+	scheduleRestart()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
 
+func scheduleRestart() {
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		exe, err := os.Executable()
@@ -145,11 +146,9 @@ func saveConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = syscall.Exec(exe, os.Args, os.Environ())
 	}()
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func renderForm(w http.ResponseWriter, errMsg string) {
+func renderForm(w http.ResponseWriter, errMsg, noticeMsg string) {
 	checked := func(b *bool) string {
 		if b != nil && *b {
 			return " checked"
@@ -160,7 +159,7 @@ func renderForm(w http.ResponseWriter, errMsg string) {
 		if s == nil {
 			return ""
 		}
-		return escapeHTML(*s)
+		return html.EscapeString(*s)
 	}
 	ival := func(i *int) string {
 		if i == nil {
@@ -169,9 +168,12 @@ func renderForm(w http.ResponseWriter, errMsg string) {
 		return fmt.Sprintf("%d", *i)
 	}
 
-	errHTML := ""
+	statusHTML := ""
 	if errMsg != "" {
-		errHTML = `<div class="err">` + escapeHTML(errMsg) + `</div>`
+		statusHTML = `<div class="err">` + html.EscapeString(errMsg) + `</div>`
+	}
+	if noticeMsg != "" {
+		statusHTML += `<div class="ok">` + html.EscapeString(noticeMsg) + `</div>`
 	}
 
 	html := `<!DOCTYPE html>
@@ -192,12 +194,15 @@ textarea{height:4rem;resize:vertical}
 .cb span{font-size:.85rem;color:#555}
 button{margin-top:1rem;padding:.5rem 1.5rem;background:#333;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:1rem}
 button:hover{background:#555}
+button:disabled{background:#999;cursor:not-allowed}
 .err{background:#fee;border:1px solid #f99;padding:.6rem .8rem;border-radius:3px;margin-bottom:1rem;color:#900}
+.ok{background:#efe;border:1px solid #9c9;padding:.6rem .8rem;border-radius:3px;margin-bottom:1rem;color:#060}
+.hint{font-size:.82rem;color:#666;margin-top:.3rem}
 </style>
 </head>
 <body>
 <h1>smtprelay configuration</h1>
-` + errHTML + `
+` + statusHTML + `
 <form method="POST" action="/">
 
 <h2>Server</h2>
@@ -207,12 +212,6 @@ button:hover{background:#555}
 <label><span>local_cert</span><input type="text" name="local_cert" value="` + val(localCert) + `"></label>
 <label><span>local_key</span><input type="text" name="local_key" value="` + val(localKey) + `"></label>
 <div class="cb"><input type="checkbox" name="local_forcetls" id="local_forcetls"` + checked(localForceTLS) + `><label for="local_forcetls"><span>local_forcetls — force STARTTLS before accepting mail</span></label></div>
-
-<h2>Remotes</h2>
-<label><span>remotes (space-separated SMTP URLs)</span><textarea name="remotes">` + val(remotesStr) + `</textarea></label>
-<div class="cb"><input type="checkbox" name="strict_sender" id="strict_sender"` + checked(strictSender) + `><label for="strict_sender"><span>strict_sender — only use remotes whose sender matches FROM</span></label></div>
-<label><span>remote_certificate</span><input type="text" name="remote_certificate" value="` + val(remoteCert) + `"></label>
-<label><span>remote_key</span><input type="text" name="remote_key" value="` + val(remoteKey) + `"></label>
 
 <h2>Access Control</h2>
 <label><span>allowed_nets (space-separated CIDR)</span><textarea name="allowed_nets">` + val(allowedNetsStr) + `</textarea></label>
@@ -239,15 +238,47 @@ button:hover{background:#555}
 <label><span>log_format (default / plain / json / pretty)</span><input type="text" name="log_format" value="` + val(logFormat) + `"></label>
 <label><span>log_level (trace / debug / info / warn / error / fatal / panic)</span><input type="text" name="log_level" value="` + val(logLevel) + `"></label>
 
-<h2>Web UI &amp; OAuth2 — <a href="/oauth2">Manage Gmail OAuth2 tokens →</a></h2>
+<h2>Web UI</h2>
 <label><span>web_listen (e.g. 127.0.0.1:8080)</span><input type="text" name="web_listen" value="` + val(webListen) + `"></label>
 <label><span>web_username</span><input type="text" name="web_username" value="` + val(webUsername) + `"></label>
 <label><span>web_password</span><input type="password" name="web_password" value="` + val(webPassword) + `"></label>
-<label><span>oauth2_client_id</span><input type="text" name="oauth2_client_id" value="` + val(oauth2ClientID) + `"></label>
-<label><span>oauth2_client_secret</span><input type="password" name="oauth2_client_secret" value="` + val(oauth2ClientSecret) + `"></label>
+
+<h2>Gmail OAuth2</h2>
+<p class="hint">Fill in all four fields below, then click <strong>Authorize with Google</strong> to complete the OAuth2 flow. A Gmail SMTP remote is configured automatically once authorized.</p>
+<label><span>oauth2_client_id</span><input type="text" name="oauth2_client_id" id="oa_cid" value="` + val(oauth2ClientID) + `"></label>
+<label><span>oauth2_client_secret</span><input type="password" name="oauth2_client_secret" id="oa_csec" value="` + val(oauth2ClientSecret) + `"></label>
+<label><span>oauth2_redirect_url (e.g. http://myhost:8080/oauth2/callback)</span><input type="text" name="oauth2_redirect_url" value="` + val(oauth2RedirectURL) + `"></label>
+<label><span>oauth2_email (Gmail address)</span><input type="text" name="oauth2_email" id="oa_email" value="` + val(oauth2Email) + `"></label>
+<label><span>oauth2_token_file (path to token JSON file)</span><input type="text" name="oauth2_token_file" id="oa_tfile" value="` + val(oauth2TokenFile) + `"></label>
 
 <button type="submit">Save &amp; Restart</button>
 </form>
+
+<form method="POST" action="/oauth2/authorize" id="oauth2form">
+<input type="hidden" name="email" id="oa_auth_email">
+<input type="hidden" name="token_file" id="oa_auth_tfile">
+<button type="submit" id="oa_btn" disabled>Authorize with Google →</button>
+</form>
+
+<script>
+(function(){
+  var cid=document.getElementById('oa_cid'),
+      csec=document.getElementById('oa_csec'),
+      email=document.getElementById('oa_email'),
+      tfile=document.getElementById('oa_tfile'),
+      btn=document.getElementById('oa_btn'),
+      hEmail=document.getElementById('oa_auth_email'),
+      hTfile=document.getElementById('oa_auth_tfile');
+  function update(){
+    var ok=cid.value.trim()&&csec.value.trim()&&email.value.trim()&&tfile.value.trim();
+    btn.disabled=!ok;
+    hEmail.value=email.value;
+    hTfile.value=tfile.value;
+  }
+  [cid,csec,email,tfile].forEach(function(el){el.addEventListener('input',update)});
+  update();
+})();
+</script>
 </body>
 </html>`
 
@@ -255,75 +286,41 @@ button:hover{background:#555}
 	fmt.Fprint(w, html)
 }
 
-func escapeHTML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, `"`, "&#34;")
-	return s
+
+// updateConfigOAuth2 updates oauth2_email and oauth2_token_file in an existing
+// INI config file, preserving all other content.
+func updateConfigOAuth2(configPath, email, tokenFile string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	setEmail, setToken := false, false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "oauth2_email") && strings.Contains(trimmed, "=") {
+			lines[i] = "oauth2_email = " + email
+			setEmail = true
+		}
+		if strings.HasPrefix(trimmed, "oauth2_token_file") && strings.Contains(trimmed, "=") {
+			lines[i] = "oauth2_token_file = " + tokenFile
+			setToken = true
+		}
+	}
+
+	if !setEmail {
+		lines = append(lines, "oauth2_email = "+email)
+	}
+	if !setToken {
+		lines = append(lines, "oauth2_token_file = "+tokenFile)
+	}
+
+	return os.WriteFile(configPath, []byte(strings.Join(lines, "\n")), 0o600)
 }
 
 // ---- OAuth2 web flow handlers ----
-
-func handleOAuth2Page(w http.ResponseWriter, r *http.Request) {
-	notice := r.URL.Query().Get("notice")
-	errMsg := r.URL.Query().Get("error")
-
-	credStatus := "not configured"
-	if *oauth2ClientID != "" && *oauth2ClientSecret != "" {
-		credStatus = "configured"
-	}
-
-	noticeHTML := ""
-	if notice != "" {
-		noticeHTML = `<div class="ok">` + escapeHTML(notice) + `</div>`
-	}
-	if errMsg != "" {
-		noticeHTML = `<div class="err">` + escapeHTML(errMsg) + `</div>`
-	}
-
-	html := `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>smtprelay — OAuth2 / Gmail</title>
-<style>
-*{box-sizing:border-box}
-body{font-family:system-ui,sans-serif;max-width:700px;margin:2rem auto;padding:0 1rem;color:#222}
-h1{font-size:1.4rem}
-h2{font-size:1rem;background:#f4f4f4;padding:.4rem .6rem;border-left:3px solid #666;margin:1.5rem 0 .8rem}
-label{display:block;margin-bottom:.9rem}
-label span{display:block;font-size:.85rem;color:#555;margin-bottom:.2rem}
-input[type=text]{width:100%;padding:.35rem .5rem;border:1px solid #ccc;border-radius:3px;font-size:.95rem;font-family:monospace}
-button{margin-top:.5rem;padding:.5rem 1.5rem;background:#333;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:1rem}
-button:hover{background:#555}
-.err{background:#fee;border:1px solid #f99;padding:.6rem .8rem;border-radius:3px;margin-bottom:1rem;color:#900}
-.ok{background:#efe;border:1px solid #9c9;padding:.6rem .8rem;border-radius:3px;margin-bottom:1rem;color:#060}
-.hint{font-size:.82rem;color:#666;margin-top:.2rem}
-a{color:#333}
-</style>
-</head>
-<body>
-<h1>OAuth2 / Gmail</h1>
-<p><a href="/">← Back to configuration</a></p>
-` + noticeHTML + `
-<h2>Google API credentials</h2>
-<p class="hint">Client credentials status: <strong>` + credStatus + `</strong>. Set <code>oauth2_client_id</code> and <code>oauth2_client_secret</code> on the <a href="/">configuration page</a> or in your config file.</p>
-
-<h2>Authorize a Gmail account</h2>
-<p class="hint">After authorization, a token file is written. Reference it in your remote URL:<br>
-<code>smtps://smtp.gmail.com:465?auth=xoauth2&amp;email=you@gmail.com&amp;token_file=/path/to/token.json</code></p>
-<form method="POST" action="/oauth2/authorize">
-<label><span>Gmail address</span><input type="text" name="email" placeholder="you@gmail.com" required></label>
-<label><span>Token file path (will be created/overwritten)</span><input type="text" name="token_file" placeholder="/etc/smtprelay/gmail_token.json" required></label>
-<button type="submit">Authorize with Google →</button>
-</form>
-</body>
-</html>`
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, html)
-}
 
 func handleOAuth2Authorize(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -331,24 +328,24 @@ func handleOAuth2Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if *oauth2ClientID == "" || *oauth2ClientSecret == "" {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("oauth2_client_id and oauth2_client_secret must be configured first"), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("oauth2_client_id and oauth2_client_secret must be configured first"), http.StatusSeeOther)
 		return
 	}
 
 	email := strings.TrimSpace(r.FormValue("email"))
 	tokenFile := strings.TrimSpace(r.FormValue("token_file"))
 	if email == "" || tokenFile == "" {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("Email and token file path are required"), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("Email and token file path are required"), http.StatusSeeOther)
 		return
 	}
 
 	state, err := newOAuth2State(email, tokenFile)
 	if err != nil {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("Failed to generate state: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("Failed to generate state: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	cfg := gmailOAuth2Config("")
+	cfg := gmailOAuth2Config()
 	authURL := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
@@ -359,25 +356,25 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	errParam := r.URL.Query().Get("error")
 
 	if errParam != "" {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("Google returned an error: "+errParam), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("Google returned an error: "+errParam), http.StatusSeeOther)
 		return
 	}
 
 	flowState, ok := consumeOAuth2State(state)
 	if !ok {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("Invalid or expired state parameter. Please try again."), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("Invalid or expired state parameter. Please try again."), http.StatusSeeOther)
 		return
 	}
 
-	cfg := gmailOAuth2Config("")
+	cfg := gmailOAuth2Config()
 	token, err := cfg.Exchange(context.Background(), code)
 	if err != nil {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("Token exchange failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("Token exchange failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	if err := saveOAuth2Token(flowState.TokenFile, token); err != nil {
-		http.Redirect(w, r, "/oauth2?error="+url.QueryEscape("Failed to save token: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/?error="+url.QueryEscape("Failed to save token: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -386,5 +383,17 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 		Str("token_file", flowState.TokenFile).
 		Msg("OAuth2 token saved")
 
-	http.Redirect(w, r, "/oauth2?notice="+url.QueryEscape("Token saved to "+flowState.TokenFile+" for "+flowState.Email), http.StatusSeeOther)
+	// Persist oauth2_email and oauth2_token_file into the config file
+	// so the Gmail remote is auto-constructed on next start.
+	configPath := flagset.Lookup("config").Value.String()
+	if configPath != "" {
+		if err := updateConfigOAuth2(configPath, flowState.Email, flowState.TokenFile); err != nil {
+			log.Error().Err(err).Msg("failed to update config with OAuth2 settings")
+		} else {
+			log.Info().Str("path", configPath).Msg("config updated with OAuth2 email and token file, restarting")
+			scheduleRestart()
+		}
+	}
+
+	http.Redirect(w, r, "/?notice="+url.QueryEscape("Token saved to "+flowState.TokenFile+" for "+flowState.Email+". Restarting to apply."), http.StatusSeeOther)
 }

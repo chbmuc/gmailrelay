@@ -77,14 +77,15 @@ func saveOAuth2Token(path string, t *oauth2.Token) error {
 }
 
 func refreshOAuth2Token(t *oauth2.Token) (*oauth2.Token, error) {
-	cfg := gmailOAuth2Config("")
+	cfg := gmailOAuth2Config()
 	ts := cfg.TokenSource(context.Background(), t)
 	return ts.Token()
 }
 
 // ---- Gmail OAuth2 config ----
 
-func gmailOAuth2Config(redirectURL string) *oauth2.Config {
+func gmailOAuth2Config() *oauth2.Config {
+	redirectURL := *oauth2RedirectURL
 	if redirectURL == "" {
 		redirectURL = "http://" + *webListen + "/oauth2/callback"
 	}

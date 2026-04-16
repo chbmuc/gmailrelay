@@ -72,6 +72,7 @@ Add the credentials to your config file:
 ```ini
 oauth2_client_id     = 123456789-abc.apps.googleusercontent.com
 oauth2_client_secret = GOCSPX-...
+oauth2_redirect_url  = http://myhost:8080/oauth2/callback
 ```
 
 The web UI must also be enabled (see above) because the authorization flow runs through it.
@@ -81,15 +82,8 @@ The web UI must also be enabled (see above) because the authorization flow runs 
 1. Open `http://<web_listen>/oauth2` in your browser.
 2. Enter the Gmail address and a path where the token file should be saved (e.g. `/etc/smtprelay/gmail.json`).
 3. Click **Authorize with Google** and complete the Google consent screen.
-4. smtprelay writes the token file (access token + refresh token) automatically.
-
-### 4. Configure the remote
-
-Reference the token file in the `remotes` setting:
-
-```ini
-remotes = smtps://smtp.gmail.com:465?auth=xoauth2&email=you@gmail.com&token_file=/etc/smtprelay/gmail.json
-```
+4. smtprelay writes the token file (access token + refresh token) and updates the config file with `oauth2_email` and `oauth2_token_file` automatically.
+5. The relay restarts and a Gmail remote (`smtps://smtp.gmail.com:465`) is configured for you — no manual remote URL needed.
 
 ### Token refresh
 

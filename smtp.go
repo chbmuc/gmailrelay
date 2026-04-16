@@ -321,10 +321,6 @@ var testHookStartTLS func(*tls.Config) // nil, except for tests
 // functionality. Higher-level packages exist outside of the standard
 // library.
 func SendMail(r *Remote, from string, to []string, msg []byte) error {
-	if r.Sender != "" {
-		from = r.Sender
-	}
-
 	if err := validateLine(from); err != nil {
 		return err
 	}
@@ -339,14 +335,6 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 		config := &tls.Config{
 			ServerName:         r.Hostname,
 			InsecureSkipVerify: r.SkipVerify,
-		}
-		// Load client certificate on-demand, just before connection
-		if r.ClientCertPath != "" && r.ClientKeyPath != "" {
-			cert, err := tls.LoadX509KeyPair(r.ClientCertPath, r.ClientKeyPath)
-			if err != nil {
-				return err
-			}
-			config.Certificates = []tls.Certificate{cert}
 		}
 		conn, err := tls.Dial("tcp", r.Addr, config)
 		if err != nil {
@@ -373,14 +361,6 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 			config := &tls.Config{
 				ServerName:         c.serverName,
 				InsecureSkipVerify: r.SkipVerify,
-			}
-			// Load client certificate on-demand, just before use
-			if r.ClientCertPath != "" && r.ClientKeyPath != "" {
-				cert, err := tls.LoadX509KeyPair(r.ClientCertPath, r.ClientKeyPath)
-				if err != nil {
-					return err
-				}
-				config.Certificates = []tls.Certificate{cert}
 			}
 			if testHookStartTLS != nil {
 				testHookStartTLS(config)
