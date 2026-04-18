@@ -20,7 +20,7 @@ var (
 )
 
 var (
-	flagset = flag.NewFlagSet("smtprelay", flag.ContinueOnError)
+	flagset = flag.NewFlagSet("gmailrelay", flag.ContinueOnError)
 
 	// config flags
 	logFile          = flagset.String("logfile", "", "Path to logfile")
@@ -231,7 +231,7 @@ func ConfigLoad() {
 	// use .env file if it exists
 	if _, err := os.Stat(".env"); err == nil {
 		if err := ff.Parse(flagset, os.Args[1:],
-			ff.WithEnvVarPrefix("smtprelay"),
+			ff.WithEnvVarPrefix("gmailrelay"),
 			ff.WithConfigFile(".env"),
 			ff.WithConfigFileParser(ff.EnvParser),
 		); err != nil {
@@ -239,9 +239,9 @@ func ConfigLoad() {
 			os.Exit(1)
 		}
 	} else {
-		// use env variables and smtprelay.ini file
+		// use env variables and gmailrelay.ini file
 		if err := ff.Parse(flagset, os.Args[1:],
-			ff.WithEnvVarPrefix("smtprelay"),
+			ff.WithEnvVarPrefix("gmailrelay"),
 			ff.WithConfigFileFlag("config"),
 			ff.WithConfigFileParser(IniParser),
 		); err != nil {
@@ -254,7 +254,7 @@ func ConfigLoad() {
 	setupLogger()
 
 	if *versionInfo {
-		fmt.Printf("smtprelay/%s (%s)\n", appVersion, buildTime)
+		fmt.Printf("gmailrelay/%s (%s)\n", appVersion, buildTime)
 		os.Exit(0)
 	}
 

@@ -58,6 +58,6 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         goos: ${{ matrix.goos }}
         goarch: ${{ matrix.goarch }}
-        extra_files: LICENSE README.md smtprelay.ini
+        extra_files: LICENSE README.md gmailrelay.ini
         ldflags: -s -w -X "main.appVersion=${{ env.APP_VERSION }}" -X "main.buildTime=${{ env.BUILD_TIME }}"
         release_tag: ${{ env.APP_VERSION }}

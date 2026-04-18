@@ -194,9 +194,9 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		var stderr bytes.Buffer
 
 		environ := os.Environ()
-		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_FROM", env.Sender))
-		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_TO", env.Recipients))
-		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_PEER", peerIP))
+		environ = append(environ, fmt.Sprintf("%s=%s", "GMAILRELAY_FROM", env.Sender))
+		environ = append(environ, fmt.Sprintf("%s=%s", "GMAILRELAY_TO", env.Recipients))
+		environ = append(environ, fmt.Sprintf("%s=%s", "GMAILRELAY_PEER", peerIP))
 
 		cmd := exec.Cmd{
 			Env:  environ,
@@ -358,7 +358,7 @@ func main() {
 
 	log.Debug().
 		Str("version", appVersion).
-		Msg("starting smtprelay")
+		Msg("starting gmailrelay")
 
 	// Load allowed users file
 	if localAuthRequired() {

@@ -1,44 +1,50 @@
-# smtprelay
+# gmailrelay
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/decke/smtprelay)](https://goreportcard.com/report/github.com/decke/smtprelay)
-[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/decke/smtprelay?label=openssf%20scorecard&style=flat)](https://scorecard.dev/viewer/?uri=github.com/decke/smtprelay)
+A small SMTP relay that accepts local mail and forwards it to Gmail over
+XOAUTH2. Fork of [smtprelay](https://github.com/decke/smtprelay), trimmed
+and reshaped around a single outbound path (`smtp.gmail.com:465`).
 
-Simple Golang based SMTP relay/proxy server that accepts mail via SMTP
-and forwards it directly to another SMTP server.
-
-
-## Why another SMTP server?
-
-Outgoing mails are usually send via SMTP to an MTA (Mail Transfer Agent)
-which is one of Postfix, Exim, Sendmail or OpenSMTPD on UNIX/Linux in most
-cases. You really don't want to setup and maintain any of those full blown
-kitchensinks yourself because they are complex, fragile and hard to
-configure.
-
-My use case is simple. I need to send automatically generated mails from
-cron via msmtp/sSMTP/dma, mails from various services and network printers
-via a remote SMTP server without giving away my mail credentials to each
-device which produces mail.
+Authorization is handled by a built-in web UI: paste your Google OAuth2
+client credentials, click through the consent screen, and the resulting
+refresh token is written to disk. The relay takes care of token refresh
+automatically on every outgoing connection.
 
 
-## Main features
+## Use case
 
-* Simple configuration with ini file .env file or environment variables
-* Supports SMTPS/TLS (465), STARTTLS (587) and unencrypted SMTP (25)
-* Checks for sender, receiver, client IP
-* Authentication support with file (LOGIN, PLAIN)
-* Enforce encryption for authentication
-* Forwards all mail to a smarthost (any SMTP server)
-* Small codebase
-* IPv6 support
-* Aliases support (dynamic reload when alias file changes)
-* Web UI for live configuration editing
-* Gmail OAuth2 / XOAUTH2 support with browser-based authorization and automatic token refresh
+Daemons, cron jobs, routers, NAS boxes, and assorted devices that want to
+send mail via `sendmail`/`msmtp`/`sSMTP`/`dma` to a local SMTP endpoint,
+without each of them holding Gmail credentials or implementing OAuth2.
+Point them at gmailrelay on localhost; gmailrelay handles Gmail.
+
+
+## Features
+
+* Listens for SMTP, STARTTLS, and SMTPS from local clients
+* Outbound to Gmail via SMTPS/XOAUTH2, with automatic token refresh
+* Browser-based OAuth2 authorization flow
+* Web UI for live configuration editing (writes config + restarts)
+* Allow/deny by client network, sender regex, recipient regex
+* Optional local SMTP AUTH (LOGIN/PLAIN) backed by a bcrypt password file
+* Aliases file with live reload
+* Optional pipe-to-command delivery in addition to (or instead of) Gmail
+* Configuration via ini file, `.env`, or `GMAILRELAY_*` environment variables
+
+
+## Install and run
+
+```sh
+go install github.com/chbmuc/gmailrelay@latest
+gmailrelay --config /etc/gmailrelay/gmailrelay.ini
+```
+
+A sample `gmailrelay.ini` is shipped with each release. Without `--config`
+the process still runs but the web UI cannot persist changes.
 
 
 ## Web UI
 
-smtprelay includes an optional embedded web server for viewing and editing configuration through a browser. Enable it with three config options:
+Enable the web UI with three config options:
 
 ```ini
 web_listen   = 127.0.0.1:8080
@@ -48,26 +54,24 @@ web_password = secret
 
 Or via flags: `--web_listen 127.0.0.1:8080 --web_username admin --web_password secret`
 
-Opening `http://127.0.0.1:8080` in a browser prompts for the credentials and then shows a form with all relay settings. Saving the form writes a new config file and restarts the process automatically.
+Open `http://127.0.0.1:8080/` and authenticate. The form exposes every
+config key; saving writes a fresh ini file and re-execs the process so
+changes take effect immediately.
 
-**Note:** The `--config` flag must point to a writable INI file for saving to work. If smtprelay was started without `--config`, the web UI is read-only.
 
-
-## Gmail OAuth2
-
-Google requires OAuth2 (XOAUTH2) for SMTP access instead of plain passwords. smtprelay supports this natively.
+## Gmail OAuth2 setup
 
 ### 1. Create Google OAuth2 credentials
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a project.
-2. Enable the **Gmail API**.
-3. Under **APIs & Services → Credentials**, create an **OAuth 2.0 Client ID** of type *Desktop app*.
-4. Note the **Client ID** and **Client Secret**.
-5. Add `http://127.0.0.1:8080/oauth2/callback` (replace port with your `web_listen`) to the list of **Authorized redirect URIs**.
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create (or pick) a project.
+2. Enable the **Gmail API** under **APIs & Services → Library**.
+3. Under **APIs & Services → Credentials**, create an **OAuth 2.0 Client ID** of type *Web application*.
+4. Add your redirect URL (e.g. `https://myhost:8080/oauth2/callback`) to **Authorized redirect URIs**. This value must match `oauth2_redirect_url` exactly (Google accepts http-only reditect URLs only for 127.0.0.1).
+5. Note the generated **Client ID** and **Client Secret**.
 
-### 2. Configure smtprelay
+### 2. Configure credentials
 
-Add the credentials to your config file:
+Either edit the config file directly:
 
 ```ini
 oauth2_client_id     = 123456789-abc.apps.googleusercontent.com
@@ -75,16 +79,34 @@ oauth2_client_secret = GOCSPX-...
 oauth2_redirect_url  = http://myhost:8080/oauth2/callback
 ```
 
-The web UI must also be enabled (see above) because the authorization flow runs through it.
+…or fill the same fields in the web UI and click **Save & Restart**.
 
 ### 3. Authorize a Gmail account
 
-1. Open `http://<web_listen>/oauth2` in your browser.
-2. Enter the Gmail address and a path where the token file should be saved (e.g. `/etc/smtprelay/gmail.json`).
-3. Click **Authorize with Google** and complete the Google consent screen.
-4. smtprelay writes the token file (access token + refresh token) and updates the config file with `oauth2_email` and `oauth2_token_file` automatically.
-5. The relay restarts and a Gmail remote (`smtps://smtp.gmail.com:465`) is configured for you — no manual remote URL needed.
+1. On the config page, fill in **oauth2_email** (the Gmail address to send as) and **oauth2_token_file** (where to persist the token, e.g. `/etc/gmailrelay/gmail.json`).
+2. Click **Authorize with Google →** and complete the consent screen.
+3. gmailrelay writes the token file, updates the config with `oauth2_email` / `oauth2_token_file`, and restarts.
+4. A Gmail remote at `smtps://smtp.gmail.com:465` is configured automatically
 
 ### Token refresh
 
-smtprelay checks the token expiry before every outgoing connection. If the access token has expired it uses the stored refresh token to obtain a new one and updates the token file on disk — no manual intervention required.
+Before every outgoing connection gmailrelay checks the token expiry. If the
+access token has expired it uses the stored refresh token to obtain a new
+one and rewrites the token file on disk. No manual intervention required.
+
+
+## Pipe command
+
+If `command` is set, every accepted message is also piped to that program
+on stdin. The following environment variables are exported for the child:
+
+| Variable            | Contents                    |
+|---------------------|-----------------------------|
+| `GMAILRELAY_FROM`   | Envelope sender             |
+| `GMAILRELAY_TO`     | Envelope recipients         |
+| `GMAILRELAY_PEER`   | Client IP                   |
+
+
+## License
+
+See [LICENSE](LICENSE).

@@ -1,4 +1,4 @@
-module github.com/decke/smtprelay
+module github.com/chbmuc/gmailrelay
 
 require (
 	github.com/DeRuina/timberjack v1.4.1
