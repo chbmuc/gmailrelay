@@ -133,8 +133,31 @@ func saveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Info().Str("path", configPath).Msg("config saved via web UI, restarting")
+	renderRestartingPage(w, "Configuration saved. Restarting…")
 	scheduleRestart()
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// renderRestartingPage writes an interstitial page that auto-reloads / after
+// the restart window elapses. Without this, the browser would follow a 303
+// redirect back to / in milliseconds and hit the still-running old process,
+// which renders the form from in-memory config — showing stale values and
+// making saves look like they silently failed until the next attempt.
+func renderRestartingPage(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta http-equiv="refresh" content="2;url=/">
+<title>gmailrelay — restarting</title>
+<style>body{font-family:system-ui,sans-serif;max-width:600px;margin:4rem auto;padding:0 1rem;color:#222;text-align:center}
+.ok{background:#efe;border:1px solid #9c9;padding:1rem;border-radius:3px;color:#060}
+.hint{font-size:.85rem;color:#666;margin-top:1rem}</style>
+</head><body>
+<div class="ok">%s</div>
+<p class="hint">Reloading in 2 seconds… <a href="/">click here</a> if the page does not refresh.</p>
+</body></html>`, html.EscapeString(msg))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func scheduleRestart() {
@@ -391,9 +414,11 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err).Msg("failed to update config with OAuth2 settings")
 		} else {
 			log.Info().Str("path", configPath).Msg("config updated with OAuth2 email and token file, restarting")
+			renderRestartingPage(w, "Token saved to "+flowState.TokenFile+" for "+flowState.Email+". Restarting to apply…")
 			scheduleRestart()
+			return
 		}
 	}
 
-	http.Redirect(w, r, "/?notice="+url.QueryEscape("Token saved to "+flowState.TokenFile+" for "+flowState.Email+". Restarting to apply."), http.StatusSeeOther)
+	http.Redirect(w, r, "/?notice="+url.QueryEscape("Token saved to "+flowState.TokenFile+" for "+flowState.Email+"."), http.StatusSeeOther)
 }
